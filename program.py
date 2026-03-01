@@ -1,99 +1,120 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
+from sklearn.cluster import KMeans
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
 
-st.set_page_config(page_title="Dashboard Analisis Siswa", layout="wide")
+st.set_page_config(page_title="Dashboard Analisis Hasil Belajar", layout="wide")
 
-st.title("📊 Dashboard Analisis Data 50 Siswa - 20 Soal")
+st.title("🎓 Dashboard Analisis Hasil Belajar Siswa")
+st.write("Dashboard interaktif lengkap untuk analisis performa siswa")
 
-# Upload file
-uploaded_file = st.file_uploader("Upload file Excel", type=["xlsx"])
+# =========================
+# 1️⃣ Upload Data
+# =========================
+st.header("📂 Upload Data")
+uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type=["xlsx"])
 
 if uploaded_file is not None:
+
     df = pd.read_excel(uploaded_file)
-
-    st.subheader("📋 Data Mentah")
-    st.dataframe(df)
-
-    # Hitung total skor siswa
-    df["Total_Skor"] = df.sum(axis=1)
+    df["Total_Nilai"] = df.sum(axis=1)
 
     # =========================
-    # Statistik Deskriptif
+    # 2️⃣ KPI
     # =========================
-    st.subheader("📊 Statistik Deskriptif")
-    st.write(df.describe())
+    st.header("📊 Key Performance Indicator")
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Jumlah Siswa", len(df))
+    col2.metric("Rata-rata Kelas", round(df["Total_Nilai"].mean(),2))
+    col3.metric("Nilai Tertinggi", df["Total_Nilai"].max())
+    col4.metric("Nilai Terendah", df["Total_Nilai"].min())
 
     # =========================
-    # Histogram Total Skor
+    # 3️⃣ Distribusi Nilai
     # =========================
-    st.subheader("📈 Histogram Total Skor Siswa")
-    fig_hist = px.histogram(df, x="Total_Skor", nbins=10, title="Distribusi Total Skor")
+    st.header("📈 Distribusi Total Nilai")
+
+    fig_hist = px.histogram(df, x="Total_Nilai")
     st.plotly_chart(fig_hist, use_container_width=True)
 
     # =========================
-    # Rata-rata per Soal
+    # 4️⃣ Analisis Kesulitan Soal
     # =========================
-    st.subheader("📊 Rata-rata Skor Tiap Soal")
+    st.header("📚 Analisis Tingkat Kesulitan Soal")
 
-    mean_per_question = df.drop(columns=["Total_Skor"]).mean().reset_index()
-    mean_per_question.columns = ["Soal", "Rata-rata"]
+    mean_per_soal = df.drop(columns=["Total_Nilai"]).mean()
+    soal_tersulit = mean_per_soal.idxmin()
+    soal_termudah = mean_per_soal.idxmax()
 
-    fig_bar = px.bar(mean_per_question,
-                     x="Soal",
-                     y="Rata-rata",
+    st.write(f"Soal paling sulit: **{soal_tersulit}**")
+    st.write(f"Soal paling mudah: **{soal_termudah}**")
+
+    fig_bar = px.bar(mean_per_soal,
+                     labels={"value":"Rata-rata Skor", "index":"Soal"},
                      title="Rata-rata Skor Tiap Soal")
     st.plotly_chart(fig_bar, use_container_width=True)
 
     # =========================
-    # Boxplot Distribusi
+    # 5️⃣ Korelasi
     # =========================
-    st.subheader("📦 Boxplot Distribusi Skor Tiap Soal")
+    st.header("🔗 Korelasi Antar Soal")
 
-    df_melt = df.drop(columns=["Total_Skor"]).melt(var_name="Soal", value_name="Skor")
-    fig_box = px.box(df_melt, x="Soal", y="Skor", title="Distribusi Skor Tiap Soal")
-    st.plotly_chart(fig_box, use_container_width=True)
-
-    # =========================
-    # Heatmap Korelasi
-    # =========================
-    st.subheader("🔥 Heatmap Korelasi Antar Soal")
-
-    corr = df.drop(columns=["Total_Skor"]).corr()
-
-    fig_heatmap = px.imshow(corr,
-                            text_auto=True,
-                            aspect="auto",
-                            title="Korelasi Antar Soal")
-    st.plotly_chart(fig_heatmap, use_container_width=True)
+    corr = df.drop(columns=["Total_Nilai"]).corr()
+    fig_corr = px.imshow(corr, text_auto=True)
+    st.plotly_chart(fig_corr, use_container_width=True)
 
     # =========================
-    # Radar Chart Rata-rata
+    # 6️⃣ Regresi Linear
     # =========================
-    st.subheader("🎯 Radar Chart Rata-rata Skor")
+    st.header("📈 Analisis Regresi Linear")
 
-    categories = mean_per_question["Soal"].tolist()
-    values = mean_per_question["Rata-rata"].tolist()
+    X = df.drop(columns=["Total_Nilai"])
+    y = df["Total_Nilai"]
 
-    fig_radar = go.Figure()
+    model = LinearRegression()
+    model.fit(X, y)
 
-    fig_radar.add_trace(go.Scatterpolar(
-        r=values,
-        theta=categories,
-        fill='toself',
-        name='Rata-rata'
-    ))
+    y_pred = model.predict(X)
+    r2 = r2_score(y, y_pred)
 
-    fig_radar.update_layout(
-        polar=dict(
-            radialaxis=dict(visible=True)
-        ),
-        showlegend=False,
-        title="Radar Chart Rata-rata Skor Tiap Soal"
-    )
+    st.write(f"Nilai R² Model: **{round(r2,3)}**")
 
-    st.plotly_chart(fig_radar, use_container_width=True)
+    coef_df = pd.DataFrame({
+        "Soal": X.columns,
+        "Koefisien": model.coef_
+    }).sort_values(by="Koefisien", ascending=False)
+
+    fig_coef = px.bar(coef_df, x="Soal", y="Koefisien",
+                      title="Kontribusi Soal terhadap Total Nilai")
+    st.plotly_chart(fig_coef, use_container_width=True)
+
+    # =========================
+    # 7️⃣ Clustering
+    # =========================
+    st.header("🎯 Segmentasi Performa Siswa")
+
+    k = st.slider("Jumlah Cluster", 2, 5, 3)
+
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    df["Cluster"] = kmeans.fit_predict(X)
+
+    fig_cluster = px.scatter(df,
+                             x="Total_Nilai",
+                             y=df.index,
+                             color="Cluster")
+    st.plotly_chart(fig_cluster, use_container_width=True)
+
+    # =========================
+    # 8️⃣ Top 5 Siswa
+    # =========================
+    st.header("🏆 Top 5 Siswa")
+
+    top5 = df.sort_values(by="Total_Nilai", ascending=False).head()
+    st.dataframe(top5)
 
 else:
     st.info("Silakan upload file Excel terlebih dahulu.")
